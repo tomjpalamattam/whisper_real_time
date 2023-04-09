@@ -1,4 +1,4 @@
-# Real Time Whisper Transcription
+# Real Time Whisper Transcription with faster-whisper
 
 ![Demo gif](demo.gif)
 
