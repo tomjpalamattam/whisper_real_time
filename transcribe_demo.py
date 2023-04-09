@@ -4,7 +4,8 @@ import argparse
 import io
 import os
 import speech_recognition as sr
-import whisper
+#import whisper # old code
+from faster_whisper import WhisperModel as whisper
 import torch
 
 from datetime import datetime, timedelta
@@ -16,8 +17,10 @@ from sys import platform
 
 def main():
     parser = argparse.ArgumentParser()
+    #parser.add_argument("--model", default="medium", help="Model to use", #old code
+    #                    choices=["tiny", "base", "small", "medium", "large"]) # old code
     parser.add_argument("--model", default="medium", help="Model to use",
-                        choices=["tiny", "base", "small", "medium", "large"])
+                        choices=["medium","small", "large-v1", "large-v2"])
     parser.add_argument("--non_english", action='store_true',
                         help="Don't use the english model.")
     parser.add_argument("--energy_threshold", default=1000,
@@ -26,7 +29,10 @@ def main():
                         help="How real time the recording is in seconds.", type=float)
     parser.add_argument("--phrase_timeout", default=3,
                         help="How much empty space between recordings before we "
-                             "consider it a new line in the transcription.", type=float)  
+                             "consider it a new line in the transcription.", type=float)
+    parser.add_argument("--task", default="transcribe", help="translate or transcribe?",
+                        choices=["translate", "transcribe"])
+    
     if 'linux' in platform:
         parser.add_argument("--default_microphone", default='pulse',
                             help="Default microphone name for SpeechRecognition. "
@@ -66,10 +72,13 @@ def main():
     model = args.model
     if args.model != "large" and not args.non_english:
         model = model + ".en"
-    audio_model = whisper.load_model(model)
+    #audio_model = whisper.load_model(model) #old code
+    audio_model = whisper(model, device="cuda", compute_type="float16")
 
     record_timeout = args.record_timeout
     phrase_timeout = args.phrase_timeout
+    task = args.task
+    language: str=None
 
     temp_file = NamedTemporaryFile().name
     transcription = ['']
@@ -121,8 +130,12 @@ def main():
                     f.write(wav_data.read())
 
                 # Read the transcription.
-                result = audio_model.transcribe(temp_file, fp16=torch.cuda.is_available())
-                text = result['text'].strip()
+                text=[]
+                #result = audio_model.transcribe(temp_file, fp16=torch.cuda.is_available()) #old code
+                #text = result['text'].strip() #old code
+                result,info=audio_model.transcribe(temp_file, beam_size=5, task=task, language=language) # language argument is only used when the model ends with  '.en'
+                for segment in result:
+                    text.append(segment.text) 
 
                 # If we detected a pause between recordings, add a new item to our transcripion.
                 # Otherwise edit the existing one.
