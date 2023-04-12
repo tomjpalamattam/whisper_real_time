@@ -73,7 +73,8 @@ def main():
     if args.model != "large" and not args.non_english:
         model = model + ".en"
     #audio_model = whisper.load_model(model) #old code
-    audio_model = whisper(model, device="cuda", compute_type="float16")
+    audio_model = whisper(model, device="cuda", compute_type="float16") # for GPU processing (needs cuda and cudnn)
+    #audio_model = whisper(model, device="cpu", compute_type="int8") # for CPU
 
     record_timeout = args.record_timeout
     phrase_timeout = args.phrase_timeout
