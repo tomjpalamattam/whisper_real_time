@@ -4,7 +4,7 @@ import argparse
 import os
 import numpy as np
 import speech_recognition as sr
-import whisper
+from faster_whisper import WhisperModel as whisper
 import torch
 
 from datetime import datetime, timedelta
@@ -16,7 +16,7 @@ from sys import platform
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="medium", help="Model to use",
-                        choices=["tiny", "base", "small", "medium", "large"])
+                        choices=["medium", "small", "large-v1", "large-v2"])
     parser.add_argument("--non_english", action='store_true',
                         help="Don't use the english model.")
     parser.add_argument("--energy_threshold", default=1000,
@@ -26,6 +26,9 @@ def main():
     parser.add_argument("--phrase_timeout", default=3,
                         help="How much empty space between recordings before we "
                              "consider it a new line in the transcription.", type=float)
+    parser.add_argument("--task", default="transcribe", help="translate or transcribe?",
+                        choices=["translate", "transcribe"])
+
     if 'linux' in platform:
         parser.add_argument("--default_microphone", default='pulse',
                             help="Default microphone name for SpeechRecognition. "
@@ -43,6 +46,8 @@ def main():
     recorder.energy_threshold = args.energy_threshold
     # Definitely do this, dynamic energy compensation lowers the energy threshold dramatically to a point where the SpeechRecognizer never stops recording.
     recorder.dynamic_energy_threshold = False
+    task = args.task
+    language: str = None
 
     # Important for linux users.
     # Prevents permanent application hang and crash by using the wrong Microphone
@@ -65,7 +70,7 @@ def main():
     model = args.model
     if args.model != "large" and not args.non_english:
         model = model + ".en"
-    audio_model = whisper.load_model(model)
+    audio_model = whisper(model, device="cuda", compute_type="int8")
 
     record_timeout = args.record_timeout
     phrase_timeout = args.phrase_timeout
@@ -118,8 +123,10 @@ def main():
                 audio_np = np.frombuffer(phrase_bytes, dtype=np.int16).astype(np.float32) / 32768.0
 
                 # Read the transcription.
-                result = audio_model.transcribe(audio_np, fp16=torch.cuda.is_available())
-                text = result['text'].strip()
+                text = []
+                result, info = audio_model.transcribe(audio_np, beam_size=5, task=task, language=language)
+                for segment in result:
+                    text.append(segment.text)
 
                 # If we detected a pause between recordings, add a new item to our transcription.
                 # Otherwise edit the existing one.
